@@ -146,7 +146,7 @@ def train_model(image_path):
     y = np.hstack((np.ones(len(car_features)), np.zeros(len(notcar_features))))
 
     print("start training")
-    ''' Split up data into randomized training and test sets'''
+    '''Split up data into randomized training and test sets'''
     rand_state = np.random.randint(0,100)
     X_train, X_test, y_train, y_test = train_test_split(scaled_X, y,
                                                        test_size=0.2,
@@ -168,3 +168,77 @@ def load_model():
     svc = joblib.load(svc_filename)
     
     return X_scaler, svc
+
+'''Find car in an img and return a list of bounding boxes'''
+def find_cars(img, ystart, ystop, scale, svc, X_scaler):
+    img_tosearch = img[ystart:ystop,:,:]
+    if color_space != 'BGR':
+        ctrans_tosearch = convert_color(img_tosearch, conv=color_space)
+    else:
+        ctrans_tosearch = img_tosearch
+    # Resize the image if the scale is not 1
+    if scale != 1:
+        imshape = ctrans_tosearch.shape
+        ctrans_tosearch = cv2.resize(ctrans_tosearch,
+                                     (imshape[1]//scale, imshape[0]//scale))
+    # Store each channel in ch1, ch2, ch3
+    ch1 = ctrans_tosearch[:,:,0]
+    ch2 = ctrans_tosearch[:,:,1]
+    ch3 = ctrans_tosearch[:,:,2]
+
+    # Define blocks in x and y direction
+    nxblocks = (ch1.shape[1] // pix_per_cell) - 1
+    nyblocks = (ch1.shape[0] // pix_per_cell) - 1
+
+    # Calculate n steps to move in x and y direction
+    window = 64
+    nblocks_per_window = (window // pix_per_cell) - 1
+    cells_per_step = 2
+    nxsteps = (nxblocks - nblocks_per_window) // cells_per_step
+    nysteps = (nyblocks - nblocks_per_window) // cells_per_step
+
+    # Compute individual channel HOG features for the entire image
+    hog1 = get_hog_features(ch1, hog_orientation, pix_per_cell, cell_per_block,
+                           feature_vec=False)
+    hog2 = get_hog_features(ch2, hog_orientation, pix_per_cell, cell_per_block,
+                           feature_vec=False)
+    hog3 = get_hog_features(ch3, hog_orientation, pix_per_cell, cell_per_block,
+                           feature_vec=False)
+    # To store bounding boxes of cars if found
+    box_list = []
+    
+    for xb in range(nxsteps+1):
+        for yb in range(nysteps+1):
+            ypos = yb*cells_per_step
+            xpos = xb*cells_per_step
+            hog_feat1 = hog1[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel()
+            hog_feat2 = hog2[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel()
+            hog_feat3 = hog3[ypos:ypos+nblocks_per_window, xpos:xpos+nblocks_per_window].ravel()
+            hog_features = np.hstack((hog_feat1, hog_feat2, hog_feat3))
+
+            xleft = xpos*pix_per_cell
+            ytop = ypos*pix_per_cell
+            '''
+            subimg = ctrans_tosearch[ytop:ytop+window, xleft:xleft+window]
+                        
+            spatial_features = bin_spatial(subimg, size=spatial_size)
+            hist_features = color_hist(subimg, nbins=hist_bins)
+
+            m = np.hstack((spatial_features, hist_features, hog_features)).reshape(1,-1)
+            scaled_m = X_scaler.transform(m)
+            '''
+            m = hog_features.reshape(1,-1)
+            scaled_m = X_scaler.transform(m)
+            
+            prediction = svc.predict(scaled_m)
+            
+            if prediction == 1:
+                xbox_left = np.int(xleft*scale)
+                ytop_draw = np.int(ytop*scale)
+                win_draw = np.int(window*scale)
+                box_list.append(((xbox_left, ytop_draw+ystart),(xbox_left+win_draw,ytop_draw+win_draw+ystart)))
+            
+    return box_list
+    
+
+    
