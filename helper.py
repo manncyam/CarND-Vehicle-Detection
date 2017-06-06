@@ -12,7 +12,9 @@ from sklearn.model_selection import train_test_split
 X_scaler_filename = "x_scaler.pkl"
 svc_filename = "svc.pkl"
 
-'''Use hog to get features and return it'''
+'''
+Use hog to get features and return it
+'''
 def get_hog_features(img, orient, pix_per_cell, cell_per_block,
                      vis=False, feature_vec=True):
     # return features along with hog image if vis is true
@@ -32,7 +34,9 @@ def get_hog_features(img, orient, pix_per_cell, cell_per_block,
                                   visualise=False, feature_vector=feature_vec)
         return features
 
-'''Resize img and return one long vector'''
+'''
+Resize img and return one long vector
+'''
 def bin_spatial(img, size=(32, 32)):
     return cv2.resize(img, size).ravel()
 
@@ -55,7 +59,7 @@ def convert_color(img, conv='RGB2YCrCb'):
         return cv2.cvtColor(img, cv2.COLOR_BGR2YCrCb)
     if conv == 'RGB2LUV':
         return cv2.cvtColor(img, cv2.COLOR_RGB2LUV)
-    
+
 '''
     Define a function to extract features from a list of images
     Have this function call bin_spatial() and color_hist()
@@ -240,5 +244,52 @@ def find_cars(img, ystart, ystop, scale, svc, X_scaler):
             
     return box_list
     
+'''Draw bounding box on the image return the image'''
+def draw_boundingboxes(img, boxes):
+    for box in boxes:
+        cv2.rectangle(img, box[0], box[1], (0,0,255), 6)
+    return img
 
+'''Add 1 to pixels within bounding boxes return heatmap'''
+def add_heat(heatmap, bboxes_n_frames):
+    for bboxes in bboxes_n_frames:
+        for bbox in bboxes:
+            heatmap[bbox[0][1]:bbox[1][1], bbox[0][0]:bbox[1][0]] += 1
+
+    return heatmap
+
+'''Set heatmap values to 0 if it is less than threshold'''
+def apply_threshold(heatmap, threshold):
+    heatmap[heatmap < threshold] = 0
+    return heatmap
+
+'''Create label'''
+def get_labels(image, bboxes_n_frames, bboxes_list, counter, counter_thres):
+    if counter < counter_thres:
+        bboxes_n_frames.append(bboxes_list)
+    else:
+        indx = counter % counter_thres
+        bboxes_n_frames[indx] = bboxes_list
+
+    counter += 1
+    heat = np.zeros_like(image[:,:,0]).astype(np.float)    
+    heat = add_heat(heat, bboxes_n_frames)
+    heat = apply_threshold(heat, counter_thres)
+    heatmap = np.clip(heat, 0, 255)
+    labels = label(heatmap)
+    return labels, bboxes_n_frames, counter
+'''Draw bounding boxes on image'''
+def draw_labeled_bboxes(img, labels):
+    for car_number in range(1, labels[1]+1):
+        # Find pixels with each car_number label value
+        nonzero = (labels[0] == car_number).nonzero()
+        # Identify x and y values of those pixels
+        nonzeroy = np.array(nonzero[0])
+        nonzerox = np.array(nonzero[1])
+        # Define a bounding box based on min/max x and y
+        bbox = ((np.min(nonzerox), np.min(nonzeroy)), (np.max(nonzerox), np.max(nonzeroy)))
+        # Draw the box on the image
+        cv2.rectangle(img, bbox[0], bbox[1], (0,0,255), 6)
+        # Return the image
+    return img
     
